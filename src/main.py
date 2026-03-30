@@ -283,17 +283,20 @@ class App(tk.Tk):
             )
             self._set_status(f"Saved: {event.save_path.name}")
         elif isinstance(event, RecordErrorEvent):
-            self._active_recs.pop(
-                next(
-                    (
-                        k
-                        for k, v in self._active_recs.items()
-                        if event.device_label in v
+            if event.save_path is not None:
+                self._active_recs.pop(str(event.save_path), None)
+            else:
+                self._active_recs.pop(
+                    next(
+                        (
+                            k
+                            for k, v in self._active_recs.items()
+                            if event.device_label in v
+                        ),
+                        "",
                     ),
-                    "",
-                ),
-                None,
-            )
+                    None,
+                )
             self._refresh_active_recs_lb()
             self._log_append(f"[{_ts()}] ERROR ({event.device_label}): {event.message}")
             self._set_status(f"Record error: {event.message}")

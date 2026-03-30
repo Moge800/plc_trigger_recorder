@@ -48,6 +48,7 @@ class RecordErrorEvent:
 
     device_label: str
     message: str
+    save_path: Path | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +181,7 @@ class RecorderThread(threading.Thread):
                 break
             now = time.monotonic()
             with self._buf_lock:
-                self._buf.append((now, frame))
+                self._buf.append((now, frame.copy()))
 
             # Update preview (downscaled, not copied — GUI will copy if needed)
             pw, ph = self._cam_cfg.preview_width, self._cam_cfg.preview_height
@@ -246,6 +247,10 @@ class RecorderThread(threading.Thread):
 
             save_path.parent.mkdir(parents=True, exist_ok=True)
             writer = cv2.VideoWriter(str(save_path), fourcc, actual_fps, (w, h))
+            if not writer.isOpened():
+                raise RuntimeError(
+                    f"VideoWriter failed to open (codec={codec}): {save_path}"
+                )
             try:
                 for _, frame in all_frames:
                     writer.write(frame)
@@ -263,7 +268,11 @@ class RecorderThread(threading.Thread):
             )
         except Exception as exc:
             self._event_queue.put(
-                RecordErrorEvent(device_label=device_label, message=str(exc))
+                RecordErrorEvent(
+                    device_label=device_label,
+                    message=str(exc),
+                    save_path=save_path,
+                )
             )
 
     def _build_save_path(self, device_label: str) -> Path:

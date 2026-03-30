@@ -343,6 +343,13 @@ class SettingsDialog(tk.Toplevel):
         dlg = _DeviceEditDialog(self, DeviceConfig())
         self.wait_window(dlg)
         if dlg.result:
+            if any(d.address == dlg.result.address for d in self._devices):
+                messagebox.showerror(
+                    "Duplicate address",
+                    f"Device address '{dlg.result.address}' is already in use.",
+                    parent=self,
+                )
+                return
             self._devices.append(dlg.result)
             self._refresh_dev_tree()
 
@@ -354,6 +361,16 @@ class SettingsDialog(tk.Toplevel):
         dlg = _DeviceEditDialog(self, self._devices[idx])
         self.wait_window(dlg)
         if dlg.result:
+            if any(
+                i != idx and d.address == dlg.result.address
+                for i, d in enumerate(self._devices)
+            ):
+                messagebox.showerror(
+                    "Duplicate address",
+                    f"Device address '{dlg.result.address}' is already in use.",
+                    parent=self,
+                )
+                return
             self._devices[idx] = dlg.result
             self._refresh_dev_tree()
 
