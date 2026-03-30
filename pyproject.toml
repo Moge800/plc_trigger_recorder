@@ -1,0 +1,35 @@
+[project]
+name = "plc-trigger-recorder"
+version = "0.1.0"
+description = "PLC trigger video recorder — saves pre/post-trigger footage on PLC bit rising edge"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pymcprotocol>=0.3.0",
+    "opencv-python>=4.8.0",
+    "Pillow>=10.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "opencv-stubs>=0.1.3",
+    "ruff>=0.9.0",
+    "ty>=0.0.1a2",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "recorder", "plc_monitor", "settings_dialog"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty.environment]
+python-version = "3.11"
