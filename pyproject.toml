@@ -10,6 +10,11 @@ dependencies = [
     "Pillow>=10.0.0",
 ]
 
+[project.optional-dependencies]
+audio = [
+    "beep-lite>=0.1.3",
+]
+
 [dependency-groups]
 dev = [
     "opencv-stubs>=0.1.3",
