@@ -386,7 +386,7 @@ class App(tk.Tk):
     def _update_device_states(self, states: dict[str, bool]) -> None:
         for addr, on in states.items():
             with contextlib.suppress(tk.TclError):
-                self._dev_tree.set(addr, "state", "ON" if on else "off")
+                self._dev_tree.set(addr, "state", "ON" if on else "OFF")
 
     # ------------------------------------------------------------------
     # シミュレーションモード

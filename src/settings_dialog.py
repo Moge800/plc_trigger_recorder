@@ -363,18 +363,29 @@ class SettingsDialog(tk.Toplevel):
             messagebox.showerror("Invalid input", "Camera values must be positive numbers.", parent=self)
             return None
 
-        try:
-            pre = float(self._rec_pre.get().strip())
-            post = float(self._rec_post.get().strip())
-            if pre < 0 or post < 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror(
-                "Invalid input", "Pre/Post-trigger seconds must be non-negative numbers.", parent=self
-            )
-            return None
-
         mode = self._capture_mode.get()
+
+        # Photo モードで Pre/Post が両方空欄ならデフォルト値を使用。
+        # Video モードでは従来どおり float 必須・非負を検証する。
+        pre_str = self._rec_pre.get().strip()
+        post_str = self._rec_post.get().strip()
+        if mode == "capture" and not pre_str and not post_str:
+            pre = RecordConfig().pre_trigger_sec
+            post = RecordConfig().post_trigger_sec
+        else:
+            try:
+                pre = float(pre_str)
+                post = float(post_str)
+                if pre < 0 or post < 0:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror(
+                    "Invalid input",
+                    "Pre/Post-trigger seconds must be non-negative numbers.",
+                    parent=self,
+                )
+                return None
+
         conn_type = self._conn_type.get()
 
         # gomc-rest 選択時は URL を必須とする

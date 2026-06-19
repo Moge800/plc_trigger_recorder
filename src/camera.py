@@ -52,10 +52,11 @@ class CameraThread(threading.Thread):
 
     def get_preview_frame(self) -> np.ndarray | None:  # type: ignore[type-arg]
         with self._frame_lock:
-            if self._frame is None:
-                return None
-            pw, ph = self._cam_cfg.preview_width, self._cam_cfg.preview_height
-            return cv2.resize(self._frame, (pw, ph), interpolation=cv2.INTER_LINEAR)
+            frame = None if self._frame is None else self._frame.copy()
+        if frame is None:
+            return None
+        pw, ph = self._cam_cfg.preview_width, self._cam_cfg.preview_height
+        return cv2.resize(frame, (pw, ph), interpolation=cv2.INTER_LINEAR)
 
     def capture_hires(self, device_label: str = "manual") -> Path | None:
         with self._capture_lock:
@@ -90,6 +91,7 @@ class CameraThread(threading.Thread):
         backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
         cap = cv2.VideoCapture(self._cam_cfg.index, backend)
         if not cap.isOpened():
+            cap.release()
             return None
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._cam_cfg.capture_width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._cam_cfg.capture_height)

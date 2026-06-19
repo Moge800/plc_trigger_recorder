@@ -173,10 +173,8 @@ class PlcMonitor(threading.Thread):
         client = self._connect_gomc_rest()
         if client is None:
             return
-        try:
+        with client:
             self._poll_loop_gomc_rest(client)
-        finally:
-            client.session.close()
 
     def _connect_mc(self) -> pymcprotocol.Type3E | pymcprotocol.Type4E | None:
         """pymcprotocol で PLC に直接接続する。"""
