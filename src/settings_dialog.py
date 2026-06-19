@@ -247,9 +247,10 @@ class SettingsDialog(tk.Toplevel):
         return f
 
     def _on_mode_changed(self) -> None:
-        """モード切替時にフレームの強調表示を更新する（両フレームは常に表示）。"""
-        # 両フレームを常に表示したまま、視覚的なフォーカスだけ変える
-        pass
+        """モード切替時に、アクティブなモードの設定フレームを強調表示する。"""
+        mode = self._capture_mode.get()
+        self._photo_lf.config(text="Photo Settings" + (" (active)" if mode == "capture" else ""))
+        self._video_lf.config(text="Video Settings" + (" (active)" if mode == "record" else ""))
 
     # ---- オプションタブ --------------------------------------------------
 
@@ -337,6 +338,9 @@ class SettingsDialog(tk.Toplevel):
         self._daily_folder.set(active_daily)
         self._device_subfolder.set(active_sub)
         self._beep_on_trigger.set(active_beep)
+
+        # アクティブモードの強調表示を初期化
+        self._on_mode_changed()
 
     # ------------------------------------------------------------------
     # ウィジェット値を取得 → AppConfig
@@ -430,9 +434,10 @@ class SettingsDialog(tk.Toplevel):
             preview_height=prev_h,
             fps=fps,
         )
+        png_compression = max(0, min(9, self._cap_png_compression.get()))
         capture = SaveConfig(
             save_path=cap_path,
-            png_compression=self._cap_png_compression.get(),
+            png_compression=png_compression,
             filename_format=self._cap_filename_fmt.get().strip() or "%Y%m%d_%H%M%S_{ms:03d}_{device}",
             daily_folder=daily,
             device_subfolder=dev_sub,

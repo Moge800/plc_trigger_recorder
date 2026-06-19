@@ -116,7 +116,7 @@ class CameraThread(threading.Thread):
                 now.strftime(self._save_cfg.filename_format).format(ms=ms, device=safe_label)
                 + ".png"
             )
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, IndexError):
             filename = now.strftime("%Y%m%d_%H%M%S") + f"_{ms:03d}_{safe_label}.png"
         base = Path(self._save_cfg.save_path)
         if self._save_cfg.daily_folder:
