@@ -1,4 +1,4 @@
-"""設定ダイアログ — PLCトリガーレコーダーのタブ形式設定UI。"""
+"""設定ダイアログ — PLCトリガースイートのタブ形式設定UI。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from config import (
     DeviceConfig,
     PlcConfig,
     RecordConfig,
+    SaveConfig,
 )
 
 if TYPE_CHECKING:
@@ -28,21 +29,18 @@ class SettingsDialog(tk.Toplevel):
 
     OKボタン押下後は ``self.result`` に更新済みの
     :class:`~config.AppConfig` が格納される。キャンセル時は ``None``。
+
+    タブ構成
+    --------
+    PLC → Devices → Camera → Mode → Options
     """
 
     def __init__(self, parent: tk.Misc, cfg: AppConfig) -> None:
-        """設定ダイアログを初期化する。
-
-        Args:
-            parent: 親ウィジェット。
-            cfg: 現在の設定値。
-        """
         super().__init__(parent)
         self.title("Settings")
         self.resizable(False, False)
         self.result: AppConfig | None = None
 
-        # 作業用コピー
         self._devices: list[DeviceConfig] = [
             DeviceConfig(address=d.address, label=d.label, enabled=d.enabled)
             for d in cfg.plc.devices
@@ -53,67 +51,87 @@ class SettingsDialog(tk.Toplevel):
 
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill="x", padx=12, pady=(0, 12))
-        ttk.Button(btn_frame, text="OK", command=self._on_ok, width=10).pack(
-            side="right", padx=2
-        )
-        ttk.Button(btn_frame, text="Cancel", command=self._on_cancel, width=10).pack(
-            side="right"
-        )
+        ttk.Button(btn_frame, text="OK", command=self._on_ok, width=10).pack(side="right", padx=2)
+        ttk.Button(btn_frame, text="Cancel", command=self._on_cancel, width=10).pack(side="right")
 
         if isinstance(parent, tk.Wm):
             self.transient(parent)
         self.grab_set()
 
     # ------------------------------------------------------------------
-    # UI構築
+    # UI 構築
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        """ノートブックと各タブ、ボタン行を生成する。"""
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=12, pady=12)
         nb.add(self._build_tab_plc(nb), text="PLC")
         nb.add(self._build_tab_devices(nb), text="Devices")
         nb.add(self._build_tab_camera(nb), text="Camera")
-        nb.add(self._build_tab_record(nb), text="Record")
+        nb.add(self._build_tab_mode(nb), text="Mode")
         nb.add(self._build_tab_options(nb), text="Options")
 
-    # ---- PLCタブ ---------------------------------------------------------
+    # ---- PLC タブ --------------------------------------------------------
 
     def _build_tab_plc(self, parent: ttk.Notebook) -> ttk.Frame:
-        """PLCタブのウィジェットを構築する。
-
-        Args:
-            parent: 追加先の Notebook。
-
-        Returns:
-            構築したタブフレーム。
-        """
         f = ttk.Frame(parent, padding=12)
-        self._plc_ip = self._labeled_entry(f, "IP Address:", 0)
-        self._plc_port = self._labeled_entry(f, "Port:", 1)
-        ttk.Label(f, text="PLC Type:").grid(row=2, column=0, sticky="w", pady=3)
-        self._plc_type = ttk.Combobox(f, values=PLC_TYPES, state="readonly", width=18)
+
+        # 接続方式ラジオボタン
+        ttk.Label(f, text="Connection:").grid(row=0, column=0, sticky="w", pady=3)
+        self._conn_type = tk.StringVar(value="mc_direct")
+        conn_frame = ttk.Frame(f)
+        conn_frame.grid(row=0, column=1, sticky="w")
+        ttk.Radiobutton(
+            conn_frame, text="MC Direct", variable=self._conn_type,
+            value="mc_direct", command=self._on_conn_type_changed,
+        ).pack(side="left")
+        ttk.Radiobutton(
+            conn_frame, text="gomc-rest", variable=self._conn_type,
+            value="gomc_rest", command=self._on_conn_type_changed,
+        ).pack(side="left", padx=(8, 0))
+
+        # MC Direct 専用フィールド群
+        self._mc_frame = ttk.Frame(f)
+        self._mc_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
+        self._plc_ip = self._labeled_entry(self._mc_frame, "IP Address:", 0)
+        self._plc_port = self._labeled_entry(self._mc_frame, "Port:", 1)
+        ttk.Label(self._mc_frame, text="PLC Type:").grid(row=2, column=0, sticky="w", pady=3)
+        self._plc_type = ttk.Combobox(self._mc_frame, values=PLC_TYPES, state="readonly", width=18)
         self._plc_type.grid(row=2, column=1, sticky="w", pady=3)
-        ttk.Label(f, text="Protocol:").grid(row=3, column=0, sticky="w", pady=3)
+        ttk.Label(self._mc_frame, text="Protocol:").grid(row=3, column=0, sticky="w", pady=3)
         self._plc_protocol = ttk.Combobox(
-            f, values=PROTOCOL_TYPES, state="readonly", width=18
+            self._mc_frame, values=PROTOCOL_TYPES, state="readonly", width=18
         )
         self._plc_protocol.grid(row=3, column=1, sticky="w", pady=3)
-        self._plc_poll = self._labeled_entry(f, "Poll interval (ms):", 4)
+
+        # gomc-rest 専用フィールド群
+        self._gomc_frame = ttk.Frame(f)
+        self._gomc_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
+        self._gomc_url = self._labeled_entry(self._gomc_frame, "gomc-rest URL:", 0)
+        ttk.Label(
+            self._gomc_frame,
+            text="  例: http://localhost:8080",
+            foreground="gray",
+        ).grid(row=1, column=0, columnspan=2, sticky="w")
+
+        # 共通フィールド（ポーリング間隔）
+        self._plc_poll = self._labeled_entry(f, "Poll interval (ms):", 2)
+
+        # 初期表示状態を設定
+        self._gomc_frame.grid_remove()
         return f
 
-    # ---- デバイスタブ -----------------------------------------------------
+    def _on_conn_type_changed(self) -> None:
+        if self._conn_type.get() == "gomc_rest":
+            self._mc_frame.grid_remove()
+            self._gomc_frame.grid()
+        else:
+            self._gomc_frame.grid_remove()
+            self._mc_frame.grid()
+
+    # ---- デバイスタブ ----------------------------------------------------
 
     def _build_tab_devices(self, parent: ttk.Notebook) -> ttk.Frame:
-        """デバイスタブのウィジェットを構築する。
-
-        Args:
-            parent: 追加先の Notebook。
-
-        Returns:
-            構築したタブフレーム。
-        """
         f = ttk.Frame(parent, padding=12)
         cols = ("address", "label", "enabled")
         self._dev_tree = ttk.Treeview(f, columns=cols, show="headings", height=8)
@@ -124,32 +142,16 @@ class SettingsDialog(tk.Toplevel):
         self._dev_tree.column("label", width=140)
         self._dev_tree.column("enabled", width=70, anchor="center")
         self._dev_tree.grid(row=0, column=0, columnspan=4, sticky="nsew", pady=(0, 6))
-        ttk.Button(f, text="Add", command=self._dev_add, width=8).grid(
-            row=1, column=0, padx=2
-        )
-        ttk.Button(f, text="Edit", command=self._dev_edit, width=8).grid(
-            row=1, column=1, padx=2
-        )
-        ttk.Button(f, text="Delete", command=self._dev_delete, width=8).grid(
-            row=1, column=2, padx=2
-        )
-        ttk.Button(f, text="Toggle", command=self._dev_toggle, width=8).grid(
-            row=1, column=3, padx=2
-        )
+        ttk.Button(f, text="Add", command=self._dev_add, width=8).grid(row=1, column=0, padx=2)
+        ttk.Button(f, text="Edit", command=self._dev_edit, width=8).grid(row=1, column=1, padx=2)
+        ttk.Button(f, text="Delete", command=self._dev_delete, width=8).grid(row=1, column=2, padx=2)
+        ttk.Button(f, text="Toggle", command=self._dev_toggle, width=8).grid(row=1, column=3, padx=2)
         f.columnconfigure(0, weight=1)
         return f
 
-    # ---- カメラタブ ------------------------------------------------------
+    # ---- カメラタブ -------------------------------------------------------
 
     def _build_tab_camera(self, parent: ttk.Notebook) -> ttk.Frame:
-        """カメラタブのウィジェットを構築する。
-
-        Args:
-            parent: 追加先の Notebook。
-
-        Returns:
-            構築したタブフレーム。
-        """
         f = ttk.Frame(parent, padding=12)
         self._cam_index = self._labeled_entry(f, "Camera Index:", 0)
         self._cam_cap_w = self._labeled_entry(f, "Capture Width:", 1)
@@ -164,61 +166,94 @@ class SettingsDialog(tk.Toplevel):
         ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
         return f
 
-    # ---- 録画タブ ------------------------------------------------------
+    # ---- モードタブ -------------------------------------------------------
 
-    def _build_tab_record(self, parent: ttk.Notebook) -> ttk.Frame:
-        """録画タブのウィジェットを構築する。
-
-        Args:
-            parent: 追加先の Notebook。
-
-        Returns:
-            構築したタブフレーム。
-        """
+    def _build_tab_mode(self, parent: ttk.Notebook) -> ttk.Frame:
         f = ttk.Frame(parent, padding=12)
 
-        self._rec_pre = self._labeled_entry(f, "Pre-trigger (sec):", 0)
-        self._rec_post = self._labeled_entry(f, "Post-trigger (sec):", 1)
+        # キャプチャモード選択ラジオ
+        ttk.Label(f, text="Capture Mode:").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self._capture_mode = tk.StringVar(value="record")
+        mode_frame = ttk.Frame(f)
+        mode_frame.grid(row=0, column=1, sticky="w", pady=(0, 6))
+        ttk.Radiobutton(
+            mode_frame, text="Photo (PNG)", variable=self._capture_mode,
+            value="capture", command=self._on_mode_changed,
+        ).pack(side="left")
+        ttk.Radiobutton(
+            mode_frame, text="Video", variable=self._capture_mode,
+            value="record", command=self._on_mode_changed,
+        ).pack(side="left", padx=(12, 0))
 
-        ttk.Label(f, text="Video Format:").grid(row=2, column=0, sticky="w", pady=3)
+        # --- Photo 設定フレーム ---
+        self._photo_lf = ttk.LabelFrame(f, text="Photo Settings", padding=8)
+        self._photo_lf.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self._cap_save_path_entry = ttk.Entry(self._photo_lf, width=28)
+        ttk.Label(self._photo_lf, text="Save Path:").grid(row=0, column=0, sticky="w", pady=3)
+        path_frame1 = ttk.Frame(self._photo_lf)
+        path_frame1.grid(row=0, column=1, sticky="ew")
+        self._cap_save_path_entry.pack(in_=path_frame1, side="left")
+        ttk.Button(
+            path_frame1, text="…", width=3,
+            command=lambda: self._browse_path(self._cap_save_path_entry),
+        ).pack(side="left", padx=(4, 0))
+        self._cap_filename_fmt = self._labeled_entry(self._photo_lf, "Filename Format:", 1)
+        ttk.Label(
+            self._photo_lf, text="  e.g. %Y%m%d_%H%M%S_{ms:03d}_{device}", foreground="gray"
+        ).grid(row=2, column=0, columnspan=2, sticky="w")
+        ttk.Label(self._photo_lf, text="PNG Compression:").grid(row=3, column=0, sticky="w", pady=3)
+        self._cap_png_compression = tk.IntVar(value=1)
+        png_frame = ttk.Frame(self._photo_lf)
+        png_frame.grid(row=3, column=1, sticky="w")
+        ttk.Scale(
+            png_frame, from_=0, to=9, orient="horizontal",
+            variable=self._cap_png_compression, length=120,
+        ).pack(side="left")
+        self._cap_png_label = ttk.Label(png_frame, text="1", width=2)
+        self._cap_png_label.pack(side="left", padx=(4, 0))
+        self._cap_png_compression.trace_add(
+            "write",
+            lambda *_: self._cap_png_label.config(text=str(self._cap_png_compression.get())),
+        )
+
+        # --- Video 設定フレーム ---
+        self._video_lf = ttk.LabelFrame(f, text="Video Settings", padding=8)
+        self._video_lf.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self._rec_pre = self._labeled_entry(self._video_lf, "Pre-trigger (sec):", 0)
+        self._rec_post = self._labeled_entry(self._video_lf, "Post-trigger (sec):", 1)
+        ttk.Label(self._video_lf, text="Video Format:").grid(row=2, column=0, sticky="w", pady=3)
         self._rec_format = ttk.Combobox(
-            f, values=VIDEO_FORMAT_NAMES, state="readonly", width=18
+            self._video_lf, values=VIDEO_FORMAT_NAMES, state="readonly", width=18
         )
         self._rec_format.grid(row=2, column=1, sticky="w", pady=3)
         self._rec_format.bind("<<ComboboxSelected>>", self._on_format_changed)
-
-        ttk.Label(f, text="Video Codec:").grid(row=3, column=0, sticky="w", pady=3)
-        self._rec_codec = ttk.Combobox(f, values=[], state="readonly", width=18)
+        ttk.Label(self._video_lf, text="Video Codec:").grid(row=3, column=0, sticky="w", pady=3)
+        self._rec_codec = ttk.Combobox(self._video_lf, values=[], state="readonly", width=18)
         self._rec_codec.grid(row=3, column=1, sticky="w", pady=3)
-
-        ttk.Label(f, text="Save Path:").grid(row=4, column=0, sticky="w", pady=3)
-        path_frame = ttk.Frame(f)
-        path_frame.grid(row=4, column=1, sticky="ew")
-        self._rec_save_path = ttk.Entry(path_frame, width=28)
+        ttk.Label(self._video_lf, text="Save Path:").grid(row=4, column=0, sticky="w", pady=3)
+        path_frame2 = ttk.Frame(self._video_lf)
+        path_frame2.grid(row=4, column=1, sticky="ew")
+        self._rec_save_path = ttk.Entry(path_frame2, width=28)
         self._rec_save_path.pack(side="left")
-        ttk.Button(path_frame, text="…", width=3, command=self._browse_save_path).pack(
-            side="left", padx=(4, 0)
-        )
-
-        self._rec_filename_fmt = self._labeled_entry(f, "Filename Format:", 5)
+        ttk.Button(
+            path_frame2, text="…", width=3,
+            command=lambda: self._browse_path(self._rec_save_path),
+        ).pack(side="left", padx=(4, 0))
+        self._rec_filename_fmt = self._labeled_entry(self._video_lf, "Filename Format:", 5)
         ttk.Label(
-            f,
-            text="  e.g. %Y%m%d_%H%M%S_{device}",
-            foreground="gray",
+            self._video_lf, text="  e.g. %Y%m%d_%H%M%S_{device}", foreground="gray"
         ).grid(row=6, column=0, columnspan=2, sticky="w")
+
         return f
 
-    # ---- オプションタブ -----------------------------------------------------
+    def _on_mode_changed(self) -> None:
+        """モード切替時にフレームの強調表示を更新する（両フレームは常に表示）。"""
+        # 両フレームを常に表示したまま、視覚的なフォーカスだけ変える
+        pass
+
+    # ---- オプションタブ --------------------------------------------------
 
     def _build_tab_options(self, parent: ttk.Notebook) -> ttk.Frame:
-        """オプションタブのウィジェットを構築する。
-
-        Args:
-            parent: 追加先の Notebook。
-
-        Returns:
-            構築したタブフレーム。
-        """
         f = ttk.Frame(parent, padding=12)
         self._daily_folder = tk.BooleanVar()
         ttk.Checkbutton(
@@ -226,11 +261,8 @@ class SettingsDialog(tk.Toplevel):
         ).grid(row=0, column=0, sticky="w", pady=4)
         self._device_subfolder = tk.BooleanVar()
         ttk.Checkbutton(
-            f,
-            text="Create sub-folder per device label",
-            variable=self._device_subfolder,
+            f, text="Create sub-folder per device label", variable=self._device_subfolder
         ).grid(row=1, column=0, sticky="w", pady=4)
-
         self._beep_on_trigger = tk.BooleanVar()
         ttk.Checkbutton(
             f,
@@ -244,22 +276,23 @@ class SettingsDialog(tk.Toplevel):
     # ------------------------------------------------------------------
 
     def _populate(self, cfg: AppConfig) -> None:
-        """設定値を各ウィジェットへ反映する。
-
-        Args:
-            cfg: 反映する設定値。
-        """
-        # PLC設定
+        # PLC 設定
+        self._conn_type.set(cfg.plc.connection_type)
         self._plc_ip.delete(0, "end")
         self._plc_ip.insert(0, cfg.plc.ip)
         self._plc_port.delete(0, "end")
         self._plc_port.insert(0, str(cfg.plc.port))
         self._plc_type.set(cfg.plc.plc_type)
         self._plc_protocol.set(cfg.plc.protocol)
+        self._gomc_url.delete(0, "end")
+        self._gomc_url.insert(0, cfg.plc.gomc_rest_url)
         self._plc_poll.delete(0, "end")
         self._plc_poll.insert(0, str(cfg.plc.poll_interval_ms))
+        self._on_conn_type_changed()
+
         # デバイス設定
         self._refresh_dev_tree()
+
         # カメラ設定
         self._cam_index.delete(0, "end")
         self._cam_index.insert(0, str(cfg.camera.index))
@@ -273,7 +306,18 @@ class SettingsDialog(tk.Toplevel):
         self._cam_prev_h.insert(0, str(cfg.camera.preview_height))
         self._cam_fps.delete(0, "end")
         self._cam_fps.insert(0, str(cfg.camera.fps))
-        # 録画設定
+
+        # モード設定
+        self._capture_mode.set(cfg.capture_mode)
+
+        # Photo 設定
+        self._cap_save_path_entry.delete(0, "end")
+        self._cap_save_path_entry.insert(0, cfg.capture.save_path)
+        self._cap_filename_fmt.delete(0, "end")
+        self._cap_filename_fmt.insert(0, cfg.capture.filename_format)
+        self._cap_png_compression.set(cfg.capture.png_compression)
+
+        # Video 設定
         self._rec_pre.delete(0, "end")
         self._rec_pre.insert(0, str(cfg.record.pre_trigger_sec))
         self._rec_post.delete(0, "end")
@@ -285,37 +329,25 @@ class SettingsDialog(tk.Toplevel):
         self._rec_save_path.insert(0, cfg.record.save_path)
         self._rec_filename_fmt.delete(0, "end")
         self._rec_filename_fmt.insert(0, cfg.record.filename_format)
-        # オプション設定
-        self._daily_folder.set(cfg.record.daily_folder)
-        self._device_subfolder.set(cfg.record.device_subfolder)
-        self._beep_on_trigger.set(cfg.record.beep_on_trigger)
+
+        # オプション（アクティブモードの値で初期化; 両方に同じ値を適用）
+        active_daily = cfg.capture.daily_folder if cfg.capture_mode == "capture" else cfg.record.daily_folder
+        active_sub = cfg.capture.device_subfolder if cfg.capture_mode == "capture" else cfg.record.device_subfolder
+        active_beep = cfg.capture.beep_on_trigger if cfg.capture_mode == "capture" else cfg.record.beep_on_trigger
+        self._daily_folder.set(active_daily)
+        self._device_subfolder.set(active_sub)
+        self._beep_on_trigger.set(active_beep)
 
     # ------------------------------------------------------------------
     # ウィジェット値を取得 → AppConfig
     # ------------------------------------------------------------------
 
     def _collect(self) -> AppConfig | None:
-        """全ウィジェットの値を読み取り新しい AppConfig を返す。入力エラー時は None。"""
         try:
             port = int(self._plc_port.get().strip())
             poll = int(self._plc_poll.get().strip())
         except ValueError:
-            messagebox.showerror(
-                "Invalid input", "Port and Poll interval must be integers.", parent=self
-            )
-            return None
-
-        try:
-            pre = float(self._rec_pre.get().strip())
-            post = float(self._rec_post.get().strip())
-            if pre < 0 or post < 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror(
-                "Invalid input",
-                "Pre/Post-trigger seconds must be non-negative numbers.",
-                parent=self,
-            )
+            messagebox.showerror("Invalid input", "Port and Poll interval must be integers.", parent=self)
             return None
 
         try:
@@ -328,21 +360,31 @@ class SettingsDialog(tk.Toplevel):
             if fps <= 0 or cap_w <= 0 or cap_h <= 0 or prev_w <= 0 or prev_h <= 0:
                 raise ValueError
         except ValueError:
+            messagebox.showerror("Invalid input", "Camera values must be positive numbers.", parent=self)
+            return None
+
+        try:
+            pre = float(self._rec_pre.get().strip())
+            post = float(self._rec_post.get().strip())
+            if pre < 0 or post < 0:
+                raise ValueError
+        except ValueError:
             messagebox.showerror(
-                "Invalid input", "Camera values must be positive numbers.", parent=self
+                "Invalid input", "Pre/Post-trigger seconds must be non-negative numbers.", parent=self
             )
             return None
 
-        save_path = self._rec_save_path.get().strip()
-        if not save_path:
-            messagebox.showerror(
-                "Invalid input", "Save path cannot be empty.", parent=self
-            )
+        cap_path = self._cap_save_path_entry.get().strip()
+        rec_path = self._rec_save_path.get().strip()
+        if not cap_path or not rec_path:
+            messagebox.showerror("Invalid input", "Save path cannot be empty.", parent=self)
             return None
 
-        fmt = self._rec_format.get()
-        codec = self._rec_codec.get()
+        daily = self._daily_folder.get()
+        dev_sub = self._device_subfolder.get()
+        beep = self._beep_on_trigger.get()
 
+        conn_type = self._conn_type.get()
         plc = PlcConfig(
             ip=self._plc_ip.get().strip(),
             port=port,
@@ -350,6 +392,8 @@ class SettingsDialog(tk.Toplevel):
             protocol=self._plc_protocol.get(),
             poll_interval_ms=poll,
             devices=list(self._devices),
+            connection_type=conn_type,
+            gomc_rest_url=self._gomc_url.get().strip(),
         )
         camera = CameraConfig(
             index=cam_index,
@@ -359,26 +403,40 @@ class SettingsDialog(tk.Toplevel):
             preview_height=prev_h,
             fps=fps,
         )
+        capture = SaveConfig(
+            save_path=cap_path,
+            png_compression=self._cap_png_compression.get(),
+            filename_format=self._cap_filename_fmt.get().strip() or "%Y%m%d_%H%M%S_{ms:03d}_{device}",
+            daily_folder=daily,
+            device_subfolder=dev_sub,
+            beep_on_trigger=beep,
+        )
+        fmt = self._rec_format.get()
+        codec = self._rec_codec.get()
         record = RecordConfig(
             pre_trigger_sec=pre,
             post_trigger_sec=post,
             video_format=fmt,
             video_codec=codec,
-            save_path=save_path,
-            filename_format=self._rec_filename_fmt.get().strip()
-            or "%Y%m%d_%H%M%S_{device}",
-            daily_folder=self._daily_folder.get(),
-            device_subfolder=self._device_subfolder.get(),
-            beep_on_trigger=self._beep_on_trigger.get(),
+            save_path=rec_path,
+            filename_format=self._rec_filename_fmt.get().strip() or "%Y%m%d_%H%M%S_{device}",
+            daily_folder=daily,
+            device_subfolder=dev_sub,
+            beep_on_trigger=beep,
         )
-        return AppConfig(plc=plc, camera=camera, record=record)
+        return AppConfig(
+            plc=plc,
+            camera=camera,
+            capture=capture,
+            record=record,
+            capture_mode=self._capture_mode.get(),
+        )
 
     # ------------------------------------------------------------------
     # ダイアログボタン
     # ------------------------------------------------------------------
 
     def _on_ok(self) -> None:
-        """入力値を検証して AppConfig を生成し、ダイアログを邉じる。"""
         cfg = self._collect()
         if cfg is None:
             return
@@ -386,7 +444,6 @@ class SettingsDialog(tk.Toplevel):
         self.destroy()
 
     def _on_cancel(self) -> None:
-        """変更を破棄してダイアログを邉じる。"""
         self.destroy()
 
     # ------------------------------------------------------------------
@@ -394,17 +451,13 @@ class SettingsDialog(tk.Toplevel):
     # ------------------------------------------------------------------
 
     def _refresh_dev_tree(self) -> None:
-        """デバイスツリーを ``self._devices`` の内容で再描画する。"""
         self._dev_tree.delete(*self._dev_tree.get_children())
         for dev in self._devices:
             self._dev_tree.insert(
-                "",
-                "end",
-                values=(dev.address, dev.label, "Yes" if dev.enabled else "No"),
+                "", "end", values=(dev.address, dev.label, "Yes" if dev.enabled else "No")
             )
 
     def _dev_add(self) -> None:
-        """デバイス追加ダイアログを開き、結果をリストへ追記する。"""
         dlg = _DeviceEditDialog(self, DeviceConfig())
         self.wait_window(dlg)
         if dlg.result:
@@ -419,7 +472,6 @@ class SettingsDialog(tk.Toplevel):
             self._refresh_dev_tree()
 
     def _dev_edit(self) -> None:
-        """選択中のデバイスを編集ダイアログで更新する。"""
         sel = self._dev_tree.selection()
         if not sel:
             return
@@ -427,10 +479,7 @@ class SettingsDialog(tk.Toplevel):
         dlg = _DeviceEditDialog(self, self._devices[idx])
         self.wait_window(dlg)
         if dlg.result:
-            if any(
-                i != idx and d.address == dlg.result.address
-                for i, d in enumerate(self._devices)
-            ):
+            if any(i != idx and d.address == dlg.result.address for i, d in enumerate(self._devices)):
                 messagebox.showerror(
                     "Duplicate address",
                     f"Device address '{dlg.result.address}' is already in use.",
@@ -441,7 +490,6 @@ class SettingsDialog(tk.Toplevel):
             self._refresh_dev_tree()
 
     def _dev_delete(self) -> None:
-        """選択中のデバイスをリストから削除する。"""
         sel = self._dev_tree.selection()
         if not sel:
             return
@@ -450,60 +498,40 @@ class SettingsDialog(tk.Toplevel):
         self._refresh_dev_tree()
 
     def _dev_toggle(self) -> None:
-        """選択中のデバイスの有効／無効を切り替える。"""
         sel = self._dev_tree.selection()
         if not sel:
             return
         idx = self._dev_tree.index(sel[0])
         dev = self._devices[idx]
-        self._devices[idx] = DeviceConfig(
-            address=dev.address, label=dev.label, enabled=not dev.enabled
-        )
+        self._devices[idx] = DeviceConfig(address=dev.address, label=dev.label, enabled=not dev.enabled)
         self._refresh_dev_tree()
 
     # ------------------------------------------------------------------
-    # 録画タブヘルパー
+    # モードタブヘルパー
     # ------------------------------------------------------------------
 
     def _on_format_changed(self, _event: object = None) -> None:
-        """フォーマット選択変更時にコーデック選択肉を更新する。"""
         self._update_codec_choices(self._rec_format.get())
 
     def _update_codec_choices(self, fmt: str) -> None:
-        """フォーマットに応じてコーデック選択肉を更新する。
-
-        Args:
-            fmt: VIDEO_FORMATS のキー文字列。
-        """
         _, codecs = VIDEO_FORMATS.get(fmt, (".mp4", ["mp4v"]))
         self._rec_codec["values"] = codecs
         if self._rec_codec.get() not in codecs:
             self._rec_codec.set(codecs[0])
 
-    def _browse_save_path(self) -> None:
-        """フォルダ選択ダイアログを開き、保存先パスを更新する。"""
-        current = self._rec_save_path.get().strip()
+    def _browse_path(self, entry: ttk.Entry) -> None:
+        current = entry.get().strip()
         initial = current if Path(current).is_dir() else str(Path.home())
         chosen = filedialog.askdirectory(initialdir=initial, parent=self)
         if chosen:
-            self._rec_save_path.delete(0, "end")
-            self._rec_save_path.insert(0, chosen)
+            entry.delete(0, "end")
+            entry.insert(0, chosen)
 
     # ------------------------------------------------------------------
     # 共通ウィジェットファクトリー
     # ------------------------------------------------------------------
 
-    def _labeled_entry(self, parent: ttk.Frame, label: str, row: int) -> ttk.Entry:
-        """ラベルとエントリをグリッドに配置して返す。
-
-        Args:
-            parent: 配置先のフレーム。
-            label: ラベルテキスト。
-            row: グリッド行番号。
-
-        Returns:
-            生成した Entry ウィジェット。
-        """
+    def _labeled_entry(self, parent: ttk.Frame | ttk.LabelFrame, label: str, row: int) -> ttk.Entry:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=3)
         entry = ttk.Entry(parent, width=22)
         entry.grid(row=row, column=1, sticky="w", pady=3)
@@ -516,19 +544,9 @@ class SettingsDialog(tk.Toplevel):
 
 
 class _DeviceEditDialog(tk.Toplevel):
-    """デバイスの追加／編集を行うサブダイアログ。
-
-    OKボタン押下後は ``self.result`` に :class:`~config.DeviceConfig` が格納される。
-    キャンセル時は ``None``。
-    """
+    """デバイスの追加／編集を行うサブダイアログ。"""
 
     def __init__(self, parent: tk.Misc, dev: DeviceConfig) -> None:
-        """デバイス編集ダイアログを初期化する。
-
-        Args:
-            parent: 親ウィジェット。
-            dev: 編集対象のデバイス設定。新規追加時はデフォルト値を渡す。
-        """
         super().__init__(parent)
         self.title("Edit Device")
         self.resizable(False, False)
@@ -551,27 +569,18 @@ class _DeviceEditDialog(tk.Toplevel):
 
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill="x", padx=12, pady=(0, 12))
-        ttk.Button(btn_frame, text="OK", command=self._on_ok, width=8).pack(
-            side="right", padx=2
-        )
-        ttk.Button(btn_frame, text="Cancel", command=self.destroy, width=8).pack(
-            side="right"
-        )
+        ttk.Button(btn_frame, text="OK", command=self._on_ok, width=8).pack(side="right", padx=2)
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy, width=8).pack(side="right")
 
         if isinstance(parent, tk.Wm):
             self.transient(parent)
         self.grab_set()
 
     def _on_ok(self) -> None:
-        """入力値を検証して DeviceConfig を生成し、ダイアログを邉じる。"""
         addr = self._address.get().strip()
         lbl = self._label.get().strip()
         if not addr:
-            messagebox.showerror(
-                "Invalid input", "Device address cannot be empty.", parent=self
-            )
+            messagebox.showerror("Invalid input", "Device address cannot be empty.", parent=self)
             return
-        self.result = DeviceConfig(
-            address=addr, label=lbl or addr, enabled=self._enabled.get()
-        )
+        self.result = DeviceConfig(address=addr, label=lbl or addr, enabled=self._enabled.get())
         self.destroy()

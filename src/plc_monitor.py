@@ -11,6 +11,7 @@ from queue import Queue
 from typing import TYPE_CHECKING
 
 import pymcprotocol  # type: ignore[import-untyped]
+from gomc_rest_client import GomcRestError, PLCClient
 
 if TYPE_CHECKING:
     from config import PlcConfig
@@ -151,25 +152,36 @@ class PlcMonitor(threading.Thread):
     # ------------------------------------------------------------------
 
     def _run_real(self) -> None:
-        """実 PLC に接続しポーリングを繰り返す。"""
+        """実 PLC に接続しポーリングを繰り返す。接続方式に応じてバックエンドを切り替える。"""
         while not self._stop_event.is_set():
-            pymc = self._connect()
-            if pymc is None:
-                continue
-            self._poll_loop(pymc)
-            with contextlib.suppress(Exception):
-                pymc.close()
+            if self._cfg.connection_type == "gomc_rest":
+                self._run_gomc_rest_cycle()
+            else:
+                self._run_mc_cycle()
 
-    def _connect(self) -> pymcprotocol.Type3E | pymcprotocol.Type4E | None:
-        """プロトコルに応じて PLC に接続する。
+    def _run_mc_cycle(self) -> None:
+        """MC プロトコル直結で1接続サイクルを実行する。"""
+        pymc = self._connect_mc()
+        if pymc is None:
+            return
+        self._poll_loop_mc(pymc)
+        with contextlib.suppress(Exception):
+            pymc.close()
 
-        Returns:
-            成功時は接続済みインスタンス、失敗時は ``None``。
-        """
+    def _run_gomc_rest_cycle(self) -> None:
+        """gomc-rest 経由で1接続サイクルを実行する。"""
+        client = self._connect_gomc_rest()
+        if client is None:
+            return
+        try:
+            self._poll_loop_gomc_rest(client)
+        finally:
+            client.session.close()
+
+    def _connect_mc(self) -> pymcprotocol.Type3E | pymcprotocol.Type4E | None:
+        """pymcprotocol で PLC に直接接続する。"""
         self._queue.put(
-            StatusEvent(
-                PlcStatus.CONNECTING, f"Connecting to {self._cfg.ip}:{self._cfg.port}…"
-            )
+            StatusEvent(PlcStatus.CONNECTING, f"Connecting to {self._cfg.ip}:{self._cfg.port}…")
         )
         try:
             if self._cfg.protocol == "4E":
@@ -180,9 +192,7 @@ class PlcMonitor(threading.Thread):
                 pymc = pymcprotocol.Type3E(plctype=self._cfg.plc_type)
             pymc.connect(self._cfg.ip, self._cfg.port)
             self._queue.put(
-                StatusEvent(
-                    PlcStatus.CONNECTED, f"Connected to {self._cfg.ip}:{self._cfg.port}"
-                )
+                StatusEvent(PlcStatus.CONNECTED, f"Connected to {self._cfg.ip}:{self._cfg.port}")
             )
             self._prev_states = {}
             return pymc
@@ -191,12 +201,23 @@ class PlcMonitor(threading.Thread):
             self._stop_event.wait(timeout=_RETRY_INTERVAL_S)
             return None
 
-    def _poll_loop(self, pymc: pymcprotocol.Type3E | pymcprotocol.Type4E) -> None:
-        """接続済み PLC をポーリングし、立ち上がりエッジを発火する。
+    def _connect_gomc_rest(self) -> PLCClient | None:
+        """gomc-rest サーバーへの疎通確認を行い、PLCClient を返す。"""
+        url = self._cfg.gomc_rest_url.rstrip("/")
+        self._queue.put(StatusEvent(PlcStatus.CONNECTING, f"Connecting to gomc-rest: {url}…"))
+        try:
+            client = PLCClient(url, timeout=5.0)
+            client.health()
+            self._queue.put(StatusEvent(PlcStatus.CONNECTED, f"Connected via gomc-rest: {url}"))
+            self._prev_states = {}
+            return client
+        except Exception as exc:
+            self._queue.put(StatusEvent(PlcStatus.ERROR, f"gomc-rest connection failed: {exc}"))
+            self._stop_event.wait(timeout=_RETRY_INTERVAL_S)
+            return None
 
-        Args:
-            pymc: 接続済みの pymcprotocol インスタンス。
-        """
+    def _poll_loop_mc(self, pymc: pymcprotocol.Type3E | pymcprotocol.Type4E) -> None:
+        """MC プロトコルで PLC をポーリングし、立ち上がりエッジを発火する。"""
         interval_s = max(self._cfg.poll_interval_ms, 10) / 1000.0
         while not self._stop_event.is_set():
             enabled = [d for d in self._cfg.devices if d.enabled]
@@ -215,17 +236,43 @@ class PlcMonitor(threading.Thread):
                 self._queue.put(StatusEvent(PlcStatus.ERROR, f"Poll error: {exc}"))
                 return
 
-            # 立ち上がりエッジを検出
-            for dev in enabled:
-                addr = dev.address
-                prev = self._prev_states.get(addr, False)
-                curr = current_states.get(addr, False)
-                if not prev and curr:
-                    self._queue.put(TriggerEvent(device_address=addr, label=dev.label))
-
-            self._prev_states = current_states
-            self._queue.put(BitStateEvent(states=dict(current_states)))
+            self._detect_and_fire_edges(enabled, current_states)
             time.sleep(interval_s)
+
+    def _poll_loop_gomc_rest(self, client: PLCClient) -> None:
+        """gomc-rest 経由で PLC をポーリングし、立ち上がりエッジを発火する。"""
+        interval_s = max(self._cfg.poll_interval_ms, 10) / 1000.0
+        while not self._stop_event.is_set():
+            enabled = [d for d in self._cfg.devices if d.enabled]
+            if not enabled:
+                time.sleep(interval_s)
+                continue
+
+            current_states: dict[str, bool] = {}
+            try:
+                for dev in enabled:
+                    values = client.read(dev.address, 1)
+                    current_states[dev.address] = bool(values[0])
+            except GomcRestError as exc:
+                self._queue.put(StatusEvent(PlcStatus.ERROR, f"Poll error: {exc}"))
+                return
+            except Exception as exc:
+                self._queue.put(StatusEvent(PlcStatus.ERROR, f"Poll error: {exc}"))
+                return
+
+            self._detect_and_fire_edges(enabled, current_states)
+            time.sleep(interval_s)
+
+    def _detect_and_fire_edges(self, enabled: list, current_states: dict[str, bool]) -> None:
+        """立ち上がりエッジを検出してイベントを発火する。"""
+        for dev in enabled:
+            addr = dev.address
+            prev = self._prev_states.get(addr, False)
+            curr = current_states.get(addr, False)
+            if not prev and curr:
+                self._queue.put(TriggerEvent(device_address=addr, label=dev.label))
+        self._prev_states = current_states
+        self._queue.put(BitStateEvent(states=dict(current_states)))
 
     # ------------------------------------------------------------------
     # シミュレーションループ
