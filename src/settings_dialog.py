@@ -374,17 +374,33 @@ class SettingsDialog(tk.Toplevel):
             )
             return None
 
+        mode = self._capture_mode.get()
+        conn_type = self._conn_type.get()
+
+        # gomc-rest 選択時は URL を必須とする
+        gomc_url = self._gomc_url.get().strip()
+        if conn_type == "gomc_rest" and not gomc_url:
+            messagebox.showerror("Invalid input", "gomc-rest URL cannot be empty.", parent=self)
+            return None
+
+        # アクティブなモードのみ Save Path を必須とし、非アクティブ側は空ならデフォルトを使う
         cap_path = self._cap_save_path_entry.get().strip()
         rec_path = self._rec_save_path.get().strip()
-        if not cap_path or not rec_path:
-            messagebox.showerror("Invalid input", "Save path cannot be empty.", parent=self)
+        if mode == "capture" and not cap_path:
+            messagebox.showerror("Invalid input", "Photo Save path cannot be empty.", parent=self)
             return None
+        if mode == "record" and not rec_path:
+            messagebox.showerror("Invalid input", "Video Save path cannot be empty.", parent=self)
+            return None
+        if not cap_path:
+            cap_path = SaveConfig().save_path
+        if not rec_path:
+            rec_path = RecordConfig().save_path
 
         daily = self._daily_folder.get()
         dev_sub = self._device_subfolder.get()
         beep = self._beep_on_trigger.get()
 
-        conn_type = self._conn_type.get()
         plc = PlcConfig(
             ip=self._plc_ip.get().strip(),
             port=port,
@@ -393,7 +409,7 @@ class SettingsDialog(tk.Toplevel):
             poll_interval_ms=poll,
             devices=list(self._devices),
             connection_type=conn_type,
-            gomc_rest_url=self._gomc_url.get().strip(),
+            gomc_rest_url=gomc_url,
         )
         camera = CameraConfig(
             index=cam_index,

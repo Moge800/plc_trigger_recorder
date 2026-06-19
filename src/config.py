@@ -60,8 +60,8 @@ class CameraConfig:
     """USBカメラの設定。"""
 
     index: int = 0
-    capture_width: int = 1920
-    capture_height: int = 1080
+    capture_width: int = 640
+    capture_height: int = 480
     preview_width: int = 640
     preview_height: int = 480
     fps: float = 30.0

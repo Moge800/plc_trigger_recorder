@@ -455,6 +455,7 @@ class App(tk.Tk):
 
     def _open_settings(self) -> None:
         prev_mode = self._cfg.capture_mode
+        prev_cfg = self._cfg
         dlg = SettingsDialog(self, self._cfg)
         self.wait_window(dlg)
         if dlg.result is None:
@@ -464,8 +465,10 @@ class App(tk.Tk):
         self._apply_config_to_ui()
         if _beep is not None and self._beep_enabled():
             _beep.preload_all()
-        # モードが変わった場合はバックエンドを再起動
-        if self._cfg.capture_mode != prev_mode:
+        # モードまたはカメラ設定が変わった場合はバックエンドを再起動
+        # (Camera index/解像度/fps は VideoCapture の reopen が必要)
+        camera_changed = self._cfg.camera != prev_cfg.camera
+        if self._cfg.capture_mode != prev_mode or camera_changed:
             self._start_backend()
         else:
             if self._camera:

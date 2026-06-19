@@ -66,8 +66,8 @@ class CameraThread(threading.Thread):
             save_path = self._build_save_path(device_label)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             params = [cv2.IMWRITE_PNG_COMPRESSION, self._save_cfg.png_compression]
-            cv2.imwrite(str(save_path), frame, params)
-            return save_path
+            ok = cv2.imwrite(str(save_path), frame, params)
+            return save_path if ok else None
 
     # ------------------------------------------------------------------
     # スレッドエントリポイント
@@ -93,6 +93,7 @@ class CameraThread(threading.Thread):
             return None
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._cam_cfg.capture_width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._cam_cfg.capture_height)
+        cap.set(cv2.CAP_PROP_FPS, self._cam_cfg.fps)
         return cap
 
     def _capture_loop(self, cap: cv2.VideoCapture) -> None:
