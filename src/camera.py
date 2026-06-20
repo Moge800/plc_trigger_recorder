@@ -73,7 +73,10 @@ class CameraThread(threading.Thread):
                 compression = 1
             params = [cv2.IMWRITE_PNG_COMPRESSION, compression]
             ok = cv2.imwrite(str(save_path), frame, params)
-            return save_path if ok else None
+            if not ok:
+                # 保存失敗（権限・パス等）はフレーム無しと区別できるよう例外にする。
+                raise OSError(f"cv2.imwrite failed to save: {save_path}")
+            return save_path
 
     # ------------------------------------------------------------------
     # スレッドエントリポイント

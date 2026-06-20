@@ -350,19 +350,23 @@ class SettingsDialog(tk.Toplevel):
 
     def _collect(self) -> AppConfig | None:
         conn_type = self._conn_type.get()
-        # Port は MC Direct 時のみ必須。gomc-rest 時は隠れフィールドの値を検証しない。
         try:
             poll = int(self._plc_poll.get().strip())
-            if conn_type == "mc_direct":
-                port = int(self._plc_port.get().strip())
-            else:
-                try:
-                    port = int(self._plc_port.get().strip())
-                except ValueError:
-                    port = PlcConfig().port
         except ValueError:
-            messagebox.showerror("Invalid input", "Port and Poll interval must be integers.", parent=self)
+            messagebox.showerror("Invalid input", "Poll interval must be an integer.", parent=self)
             return None
+        # Port は MC Direct 時のみ必須。gomc-rest 時は隠れフィールドの値を検証せずデフォルトを使う。
+        if conn_type == "mc_direct":
+            try:
+                port = int(self._plc_port.get().strip())
+            except ValueError:
+                messagebox.showerror("Invalid input", "Port must be an integer.", parent=self)
+                return None
+        else:
+            try:
+                port = int(self._plc_port.get().strip())
+            except ValueError:
+                port = PlcConfig().port
 
         try:
             cam_index = int(self._cam_index.get().strip())

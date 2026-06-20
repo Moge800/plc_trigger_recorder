@@ -468,20 +468,26 @@ class App(tk.Tk):
 
         def _worker() -> None:
             path: Path | None = None
+            error: str | None = None
             try:
+                # None = フレーム無し、例外 = 保存失敗（権限・パス等）として区別する。
                 path = camera.capture_hires(device_label)
-            except Exception:
-                path = None
+                if path is None:
+                    error = "no frame available"
+            except Exception as exc:
+                error = f"save error: {exc}"
             finally:
                 # capture_hires が例外を投げても busy フラグが必ず解除されるよう、
                 # finally で _on_capture_done をスケジュールする。
                 # 終了処理中は after() が TclError/RuntimeError を投げ得るので抑制する。
                 with contextlib.suppress(tk.TclError, RuntimeError):
-                    self.after(0, lambda: self._on_capture_done(device_label, path))
+                    self.after(0, lambda: self._on_capture_done(device_label, path, error))
 
         threading.Thread(target=_worker, name="CaptureWorker", daemon=True).start()
 
-    def _on_capture_done(self, device_label: str, path: Path | None) -> None:
+    def _on_capture_done(
+        self, device_label: str, path: Path | None, error: str | None = None
+    ) -> None:
         self._capture_in_progress = False
         if self._closing:
             return
@@ -490,8 +496,9 @@ class App(tk.Tk):
             self._log_append(f"[{_ts()}] Captured: {device_label} → {path.name}")
             self._set_status(f"Captured: {path.name}")
         else:
-            self._log_append(f"[{_ts()}] Capture failed (no frame): {device_label}")
-            self._set_status("Capture failed: no frame available.")
+            reason = error or "unknown error"
+            self._log_append(f"[{_ts()}] Capture failed ({reason}): {device_label}")
+            self._set_status(f"Capture failed: {reason}.")
         if _beep is not None and self._cfg.capture.beep_on_trigger:
             _beep.ok() if path else _beep.ng()
 
