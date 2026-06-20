@@ -83,6 +83,8 @@ class App(tk.Tk):
         self._plc_monitor: PlcMonitor | None = None
         self._recorder: RecorderThread | None = None
         self._camera: CameraThread | None = None
+        # Photo キャプチャ実行中フラグ（main スレッドのみで参照）
+        self._capture_in_progress = False
 
         self._build_ui()
         self._apply_config_to_ui()
@@ -365,7 +367,9 @@ class App(tk.Tk):
 
     def _toggle_plc_connection(self) -> None:
         if self._plc_monitor and self._plc_monitor.is_alive():
-            self._stop_plc_monitor()
+            if not self._stop_plc_monitor():
+                self._set_status("PLC monitor still stopping — please retry.")
+                return
             self._btn_connect.config(text="Connect PLC")
             self._plc_light.set_color("gray")
             self._plc_status_label.config(text="Disconnected")
@@ -373,16 +377,21 @@ class App(tk.Tk):
         else:
             self._start_plc_monitor()
 
-    def _stop_plc_monitor(self) -> None:
+    def _stop_plc_monitor(self) -> bool:
         """PLC モニタースレッドを停止し、終了を待ってから参照をクリアする。
 
         join せずに参照を捨てると、再接続時に旧スレッドと新スレッドが並走して
         重複・矛盾するイベントを発火する恐れがあるため、タイムアウト付きで join する。
+        join がタイムアウトしてスレッドがまだ生存している場合は参照を残し ``False``
+        を返す（新規起動による二重起動を防ぐ）。
         """
         if self._plc_monitor:
             self._plc_monitor.stop()
             self._plc_monitor.join(timeout=2.0)
+            if self._plc_monitor.is_alive():
+                return False
             self._plc_monitor = None
+        return True
 
     def _start_plc_monitor(self) -> None:
         self._plc_monitor = PlcMonitor(self._cfg.plc, _GUI_EVENT_QUEUE, simulate=self._simulate_mode)
@@ -430,7 +439,9 @@ class App(tk.Tk):
         else:
             self._sim_frame.pack_forget()
         if self._plc_monitor and self._plc_monitor.is_alive():
-            self._stop_plc_monitor()
+            if not self._stop_plc_monitor():
+                self._set_status("PLC monitor still stopping — restart skipped.")
+                return
             self._start_plc_monitor()
 
     def _sim_fire_trigger(self) -> None:
@@ -445,8 +456,14 @@ class App(tk.Tk):
     def _do_capture(self, device_label: str) -> None:
         if self._camera is None:
             return
+        # 直前のキャプチャがまだ進行中ならスレッドを増やさずスキップする
+        # （capture_hires はロックで直列化されるため、溜め込んでも意味がない）。
+        if self._capture_in_progress:
+            self._log_append(f"[{_ts()}] Capture busy — trigger skipped: {device_label}")
+            return
         # PNG エンコード + ディスク I/O は GUI スレッドをブロックするため、
         # バックグラウンドスレッドで実行し、UI 更新は after() で main スレッドへ戻す。
+        self._capture_in_progress = True
         camera = self._camera
 
         def _worker() -> None:
@@ -456,6 +473,7 @@ class App(tk.Tk):
         threading.Thread(target=_worker, name="CaptureWorker", daemon=True).start()
 
     def _on_capture_done(self, device_label: str, path: Path | None) -> None:
+        self._capture_in_progress = False
         if self._closing:
             return
         if path is not None:

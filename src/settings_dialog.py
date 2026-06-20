@@ -379,26 +379,27 @@ class SettingsDialog(tk.Toplevel):
 
         mode = self._capture_mode.get()
 
-        # Photo モードで Pre/Post が両方空欄ならデフォルト値を使用。
-        # Video モードでは従来どおり float 必須・非負を検証する。
+        # Photo モードでは Pre/Post は無関係なので、空欄のフィールドは個別に
+        # デフォルト値へフォールバックする（片方だけ空でも保存をブロックしない）。
+        # Video モードでは従来どおり両方必須・非負を検証する。
         pre_str = self._rec_pre.get().strip()
         post_str = self._rec_post.get().strip()
-        if mode == "capture" and not pre_str and not post_str:
-            pre = RecordConfig().pre_trigger_sec
-            post = RecordConfig().post_trigger_sec
-        else:
-            try:
+        try:
+            if mode == "capture":
+                pre = float(pre_str) if pre_str else RecordConfig().pre_trigger_sec
+                post = float(post_str) if post_str else RecordConfig().post_trigger_sec
+            else:
                 pre = float(pre_str)
                 post = float(post_str)
-                if pre < 0 or post < 0:
-                    raise ValueError
-            except ValueError:
-                messagebox.showerror(
-                    "Invalid input",
-                    "Pre/Post-trigger seconds must be non-negative numbers.",
-                    parent=self,
-                )
-                return None
+            if pre < 0 or post < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror(
+                "Invalid input",
+                "Pre/Post-trigger seconds must be non-negative numbers.",
+                parent=self,
+            )
+            return None
 
         # gomc-rest 選択時は URL を必須とする
         gomc_url = self._gomc_url.get().strip()

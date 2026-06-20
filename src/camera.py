@@ -38,6 +38,10 @@ class CameraThread(threading.Thread):
         self._frame_lock = threading.Lock()
         self._frame: np.ndarray | None = None  # type: ignore[type-arg]
         self._capture_lock = threading.Lock()
+        # プレビューはキャプチャスレッド側で縮小済みのものを保持し、
+        # GUI スレッドでは resize せずコピーを返すだけにする（UI スタッター回避）。
+        self._preview_lock = threading.Lock()
+        self._preview_frame: np.ndarray | None = None  # type: ignore[type-arg]
 
     # ------------------------------------------------------------------
     # 公開 API
@@ -51,12 +55,8 @@ class CameraThread(threading.Thread):
         self._save_cfg = cfg.capture
 
     def get_preview_frame(self) -> np.ndarray | None:  # type: ignore[type-arg]
-        with self._frame_lock:
-            frame = None if self._frame is None else self._frame.copy()
-        if frame is None:
-            return None
-        pw, ph = self._cam_cfg.preview_width, self._cam_cfg.preview_height
-        return cv2.resize(frame, (pw, ph), interpolation=cv2.INTER_LINEAR)
+        with self._preview_lock:
+            return None if self._preview_frame is None else self._preview_frame.copy()
 
     def capture_hires(self, device_label: str = "manual") -> Path | None:
         with self._capture_lock:
@@ -111,6 +111,10 @@ class CameraThread(threading.Thread):
                 break
             with self._frame_lock:
                 self._frame = frame
+            pw, ph = self._cam_cfg.preview_width, self._cam_cfg.preview_height
+            preview = cv2.resize(frame, (pw, ph), interpolation=cv2.INTER_LINEAR)
+            with self._preview_lock:
+                self._preview_frame = preview
 
     def _build_save_path(self, device_label: str) -> Path:
         now = datetime.now()
