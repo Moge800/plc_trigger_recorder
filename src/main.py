@@ -467,8 +467,17 @@ class App(tk.Tk):
         camera = self._camera
 
         def _worker() -> None:
-            path = camera.capture_hires(device_label)
-            self.after(0, lambda: self._on_capture_done(device_label, path))
+            path: Path | None = None
+            try:
+                path = camera.capture_hires(device_label)
+            except Exception:
+                path = None
+            finally:
+                # capture_hires が例外を投げても busy フラグが必ず解除されるよう、
+                # finally で _on_capture_done をスケジュールする。
+                # 終了処理中は after() が TclError/RuntimeError を投げ得るので抑制する。
+                with contextlib.suppress(tk.TclError, RuntimeError):
+                    self.after(0, lambda: self._on_capture_done(device_label, path))
 
         threading.Thread(target=_worker, name="CaptureWorker", daemon=True).start()
 

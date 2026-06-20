@@ -188,11 +188,11 @@ class SettingsDialog(tk.Toplevel):
         # --- Photo 設定フレーム ---
         self._photo_lf = ttk.LabelFrame(f, text="Photo Settings", padding=8)
         self._photo_lf.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        self._cap_save_path_entry = ttk.Entry(self._photo_lf, width=28)
         ttk.Label(self._photo_lf, text="Save Path:").grid(row=0, column=0, sticky="w", pady=3)
         path_frame1 = ttk.Frame(self._photo_lf)
         path_frame1.grid(row=0, column=1, sticky="ew")
-        self._cap_save_path_entry.pack(in_=path_frame1, side="left")
+        self._cap_save_path_entry = ttk.Entry(path_frame1, width=28)
+        self._cap_save_path_entry.pack(side="left")
         ttk.Button(
             path_frame1, text="…", width=3,
             command=lambda: self._browse_path(self._cap_save_path_entry),
