@@ -1,13 +1,14 @@
 [project]
-name = "plc-trigger-recorder"
-version = "0.1.0"
-description = "PLC trigger video recorder — saves pre/post-trigger footage on PLC bit rising edge"
+name = "plc-trigger-suite"
+version = "0.2.0"
+description = "PLC trigger suite — photo capture and video recording on PLC bit rising edge, with MC Direct and gomc-rest support"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pymcprotocol>=0.3.0",
     "opencv-python>=4.8.0",
     "Pillow>=10.0.0",
+    "gomc-rest-client>=0.8.0",
 ]
 
 [project.optional-dependencies]
@@ -30,7 +31,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["config", "recorder", "plc_monitor", "settings_dialog"]
+known-first-party = ["config", "camera", "recorder", "plc_monitor", "settings_dialog"]
 
 [tool.ruff.format]
 quote-style = "double"

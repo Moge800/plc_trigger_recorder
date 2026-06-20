@@ -3,6 +3,24 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
+name = "beep-lite"
+version = "0.1.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/30/656afd8e8248883aa13fde72a4b3cf7dc43077a50cf1b7d1a9169d9bc37f/beep_lite-0.1.3.tar.gz", hash = "sha256:b5d90d7b40a1d4ef7552501c166e5da406421541433898c09b449c3f082bcb44", size = 26315, upload-time = "2026-02-24T10:02:05.502Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/df/bf5cdcea7a62d1ded3c26830b738b042afbcda39d232ef5c2bd5080a9b4c/beep_lite-0.1.3-py3-none-any.whl", hash = "sha256:2741156c969d5e47e7a37e105ff251cc68cb99f2b998f7b9acc7d23e418e7ca7", size = 29932, upload-time = "2026-02-24T10:02:04.449Z" },
+]
+
+[[package]]
+name = "gomc-rest-client"
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/1e/7ed3d49c28c89431bec7d3e1c3514f95a8200ecb5d9b8b2bae0ca3f7153c/gomc_rest_client-0.8.0.tar.gz", hash = "sha256:59f6f957bd72266a05efa7ac62e6e2cdb9a1d64e74562c0a61a9ad322af9904b", size = 21745, upload-time = "2026-06-13T06:11:16.746Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/9d/262b7aac3fc948909d607672ad0da0130ce90c4ee421f9b011fcc7efa13b/gomc_rest_client-0.8.0-py3-none-any.whl", hash = "sha256:3c1ad4ff6b915abb8256c3ef0d3fc2fd5f808f6bf46adb84438785881398194c", size = 10770, upload-time = "2026-06-13T06:11:15.255Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.4.4"
 source = { registry = "https://pypi.org/simple" }
@@ -196,13 +214,19 @@ wheels = [
 ]
 
 [[package]]
-name = "plc-trigger-recorder"
-version = "0.1.0"
+name = "plc-trigger-suite"
+version = "0.2.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "gomc-rest-client" },
     { name = "opencv-python" },
     { name = "pillow" },
     { name = "pymcprotocol" },
+]
+
+[package.optional-dependencies]
+audio = [
+    { name = "beep-lite" },
 ]
 
 [package.dev-dependencies]
@@ -214,10 +238,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "beep-lite", marker = "extra == 'audio'", specifier = ">=0.1.3" },
+    { name = "gomc-rest-client", specifier = ">=0.8.0" },
     { name = "opencv-python", specifier = ">=4.8.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pymcprotocol", specifier = ">=0.3.0" },
 ]
+provides-extras = ["audio"]
 
 [package.metadata.requires-dev]
 dev = [
