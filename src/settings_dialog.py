@@ -202,7 +202,9 @@ class SettingsDialog(tk.Toplevel):
             self._photo_lf, text="  e.g. %Y%m%d_%H%M%S_{ms:03d}_{device}", foreground="gray"
         ).grid(row=2, column=0, columnspan=2, sticky="w")
         ttk.Label(self._photo_lf, text="PNG Compression:").grid(row=3, column=0, sticky="w", pady=3)
-        self._cap_png_compression = tk.IntVar(value=1)
+        # ttk.Scale はドラッグ中に浮動小数文字列("1.0")を変数へ書き込むため、
+        # IntVar だと TclError になる。DoubleVar を使い表示時に int 化する。
+        self._cap_png_compression = tk.DoubleVar(value=1.0)
         png_frame = ttk.Frame(self._photo_lf)
         png_frame.grid(row=3, column=1, sticky="w")
         ttk.Scale(
@@ -213,7 +215,7 @@ class SettingsDialog(tk.Toplevel):
         self._cap_png_label.pack(side="left", padx=(4, 0))
         self._cap_png_compression.trace_add(
             "write",
-            lambda *_: self._cap_png_label.config(text=str(self._cap_png_compression.get())),
+            lambda *_: self._cap_png_label.config(text=str(int(self._cap_png_compression.get()))),
         )
 
         # --- Video 設定フレーム ---
@@ -347,9 +349,17 @@ class SettingsDialog(tk.Toplevel):
     # ------------------------------------------------------------------
 
     def _collect(self) -> AppConfig | None:
+        conn_type = self._conn_type.get()
+        # Port は MC Direct 時のみ必須。gomc-rest 時は隠れフィールドの値を検証しない。
         try:
-            port = int(self._plc_port.get().strip())
             poll = int(self._plc_poll.get().strip())
+            if conn_type == "mc_direct":
+                port = int(self._plc_port.get().strip())
+            else:
+                try:
+                    port = int(self._plc_port.get().strip())
+                except ValueError:
+                    port = PlcConfig().port
         except ValueError:
             messagebox.showerror("Invalid input", "Port and Poll interval must be integers.", parent=self)
             return None
@@ -389,8 +399,6 @@ class SettingsDialog(tk.Toplevel):
                     parent=self,
                 )
                 return None
-
-        conn_type = self._conn_type.get()
 
         # gomc-rest 選択時は URL を必須とする
         gomc_url = self._gomc_url.get().strip()
@@ -434,7 +442,7 @@ class SettingsDialog(tk.Toplevel):
             preview_height=prev_h,
             fps=fps,
         )
-        png_compression = max(0, min(9, self._cap_png_compression.get()))
+        png_compression = max(0, min(9, int(self._cap_png_compression.get())))
         capture = SaveConfig(
             save_path=cap_path,
             png_compression=png_compression,

@@ -233,7 +233,10 @@ class App(tk.Tk):
 
     def _start_backend(self) -> None:
         """設定の capture_mode に応じてバックエンドスレッドを起動する。"""
-        self._stop_backend()
+        if not self._stop_backend():
+            # 旧スレッドが停止しきれていない場合、新規起動するとデバイスを奪い合う。
+            self._set_status("Backend still stopping — restart skipped.")
+            return
         if self._cfg.capture_mode == "capture":
             self._camera = CameraThread(self._cfg)
             self._camera.start()
@@ -243,15 +246,28 @@ class App(tk.Tk):
             self._recorder.start()
             self._set_status("Recorder started (Video mode).")
 
-    def _stop_backend(self) -> None:
+    def _stop_backend(self) -> bool:
+        """バックエンドスレッドを停止する。
+
+        スレッドが実際に終了した場合のみ参照をクリアする。join がタイムアウトして
+        スレッドがまだ生存している場合は参照を残し ``False`` を返す（新規起動を防ぐ）。
+        """
+        ok = True
         if self._camera:
             self._camera.stop()
             self._camera.join(timeout=2.0)
-            self._camera = None
+            if self._camera.is_alive():
+                ok = False
+            else:
+                self._camera = None
         if self._recorder:
             self._recorder.stop()
             self._recorder.join(timeout=2.0)
-            self._recorder = None
+            if self._recorder.is_alive():
+                ok = False
+            else:
+                self._recorder = None
+        return ok
 
     # ------------------------------------------------------------------
     # GUI リフレッシュループ
