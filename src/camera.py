@@ -67,7 +67,10 @@ class CameraThread(threading.Thread):
             save_path = self._build_save_path(device_label)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             # config.json 由来の値が範囲外/非整数でも cv2.imwrite が受け付けるよう 0–9 にクランプ。
-            compression = max(0, min(9, int(self._save_cfg.png_compression)))
+            try:
+                compression = max(0, min(9, int(self._save_cfg.png_compression)))
+            except (TypeError, ValueError):
+                compression = 1
             params = [cv2.IMWRITE_PNG_COMPRESSION, compression]
             ok = cv2.imwrite(str(save_path), frame, params)
             return save_path if ok else None

@@ -9,8 +9,10 @@ from __future__ import annotations
 import contextlib
 import os
 import queue
+import threading
 import tkinter as tk
 from datetime import datetime
+from pathlib import Path
 from queue import Queue
 from tkinter import messagebox, scrolledtext, ttk
 from typing import Any
@@ -363,14 +365,24 @@ class App(tk.Tk):
 
     def _toggle_plc_connection(self) -> None:
         if self._plc_monitor and self._plc_monitor.is_alive():
-            self._plc_monitor.stop()
-            self._plc_monitor = None
+            self._stop_plc_monitor()
             self._btn_connect.config(text="Connect PLC")
             self._plc_light.set_color("gray")
             self._plc_status_label.config(text="Disconnected")
             self._set_status("PLC disconnected.")
         else:
             self._start_plc_monitor()
+
+    def _stop_plc_monitor(self) -> None:
+        """PLC モニタースレッドを停止し、終了を待ってから参照をクリアする。
+
+        join せずに参照を捨てると、再接続時に旧スレッドと新スレッドが並走して
+        重複・矛盾するイベントを発火する恐れがあるため、タイムアウト付きで join する。
+        """
+        if self._plc_monitor:
+            self._plc_monitor.stop()
+            self._plc_monitor.join(timeout=2.0)
+            self._plc_monitor = None
 
     def _start_plc_monitor(self) -> None:
         self._plc_monitor = PlcMonitor(self._cfg.plc, _GUI_EVENT_QUEUE, simulate=self._simulate_mode)
@@ -418,7 +430,7 @@ class App(tk.Tk):
         else:
             self._sim_frame.pack_forget()
         if self._plc_monitor and self._plc_monitor.is_alive():
-            self._plc_monitor.stop()
+            self._stop_plc_monitor()
             self._start_plc_monitor()
 
     def _sim_fire_trigger(self) -> None:
@@ -433,7 +445,19 @@ class App(tk.Tk):
     def _do_capture(self, device_label: str) -> None:
         if self._camera is None:
             return
-        path = self._camera.capture_hires(device_label)
+        # PNG エンコード + ディスク I/O は GUI スレッドをブロックするため、
+        # バックグラウンドスレッドで実行し、UI 更新は after() で main スレッドへ戻す。
+        camera = self._camera
+
+        def _worker() -> None:
+            path = camera.capture_hires(device_label)
+            self.after(0, lambda: self._on_capture_done(device_label, path))
+
+        threading.Thread(target=_worker, name="CaptureWorker", daemon=True).start()
+
+    def _on_capture_done(self, device_label: str, path: Path | None) -> None:
+        if self._closing:
+            return
         if path is not None:
             self._last_capture_label.config(text=path.name)
             self._log_append(f"[{_ts()}] Captured: {device_label} → {path.name}")
