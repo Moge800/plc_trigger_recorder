@@ -14,6 +14,7 @@ CONFIG_FILE = Path(__file__).parent.parent / "config.json"
 PLC_TYPES = ["Q", "L", "QnA", "iQ-L", "iQ-R"]
 PROTOCOL_TYPES = ["3E", "4E"]
 CONNECTION_TYPES = ["mc_direct", "gomc_rest"]
+CAPTURE_MODES = ["capture", "record"]
 
 VIDEO_FORMATS: dict[str, tuple[str, list[str]]] = {
     "mp4": (".mp4", ["mp4v", "avc1"]),
@@ -125,6 +126,9 @@ def _plc_from_dict(d: dict) -> PlcConfig:  # type: ignore[type-arg]
     d = d.copy()
     devices = [DeviceConfig(**dev) for dev in d.pop("devices", [])]
     d.setdefault("connection_type", "mc_direct")
+    # 想定外の値（手編集 config.json 等）は MC Direct にフォールバックする。
+    if d["connection_type"] not in CONNECTION_TYPES:
+        d["connection_type"] = "mc_direct"
     d.setdefault("gomc_rest_url", "http://localhost:8080")
     return PlcConfig(**d, devices=devices)
 
@@ -137,13 +141,16 @@ def config_from_dict(d: dict) -> AppConfig:  # type: ignore[type-arg]
     camera_d.setdefault("fps", 30.0)
     camera = CameraConfig(**camera_d)
 
-    # 旧 cam の "save" キーも受け付ける
+    # 後方互換: 旧バージョンのトップレベル "save" キーも capture として受け付ける。
     capture_d = d.get("capture", d.get("save", {}))
     capture = SaveConfig(**capture_d) if capture_d else SaveConfig()
 
     record = RecordConfig(**d.get("record", {})) if d.get("record") else RecordConfig()
 
+    # 想定外の値はデフォルト（record）にフォールバックする。
     capture_mode = d.get("capture_mode", "record")
+    if capture_mode not in CAPTURE_MODES:
+        capture_mode = "record"
     return AppConfig(plc=plc, camera=camera, capture=capture, record=record, capture_mode=capture_mode)
 
 
